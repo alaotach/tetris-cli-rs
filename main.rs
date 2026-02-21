@@ -1,6 +1,7 @@
 use std::{thread, time::Duration};
 use std::io::stdout;
 use std::io::Write;
+use crossterm::{ event::{self, Event, KeyCode, KeyEventKind}, terminal::{enable_raw_mode, disable_raw_mode}, };
 const W: usize = 10;
 const H: usize = 15;
 
@@ -52,10 +53,36 @@ impl Board {
 fn main() {
     let mut board = Board::new();
     let mut piece = Piece { x: 4, y: 0 };
+    enable_raw_mode().unwrap();
     loop {
         print!("\x1B[2J\x1B[1;1H");
         board.render(&piece);
         stdout().flush().unwrap();
+        if event::poll(Duration::from_millis(1)).unwrap() {
+            if let Event::Key(key_event) = event::read().unwrap() {
+                if key_event.kind == KeyEventKind::Press {
+                match key_event.code {
+                        KeyCode::Left => {
+                            if !board.is_occ(piece.x-1, piece.y) {
+                                piece.x -= 1;
+                            }
+                        }
+                        KeyCode::Right => {
+                            if !board.is_occ(piece.x+1, piece.y) {
+                                piece.x += 1;
+                            }
+                        }
+                        KeyCode::Down => {
+                            if !board.is_occ(piece.x, piece.y+1) {
+                                piece.y += 1;
+                            }
+                        }
+                        KeyCode::Esc => break,
+                        _ => {}
+                    }
+                }
+            }
+        }
         thread::sleep(std::time::Duration::from_millis(200));
         if board.is_occ(piece.x, piece.y+1) {
             board.set_cell(piece.x as usize, piece.y as usize, 1);
@@ -68,4 +95,5 @@ fn main() {
             piece.y += 1;
         }
     }
+    disable_raw_mode().unwrap();
 }

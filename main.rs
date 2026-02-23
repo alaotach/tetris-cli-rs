@@ -53,36 +53,48 @@ impl Board {
 fn main() {
     let mut board = Board::new();
     let mut piece = Piece { x: 4, y: 0 };
+    let mut ml = false;
+    let mut mr = false;
+    let mut md = false;
+    let mut exit = false;
     enable_raw_mode().unwrap();
     loop {
         print!("\x1B[2J\x1B[1;1H");
         board.render(&piece);
         stdout().flush().unwrap();
-        if event::poll(Duration::from_millis(1)).unwrap() {
+        
+        while event::poll(Duration::from_millis(0)).unwrap() {
             if let Event::Key(key_event) = event::read().unwrap() {
-                if key_event.kind == KeyEventKind::Press {
-                match key_event.code {
-                        KeyCode::Left => {
-                            if !board.is_occ(piece.x-1, piece.y) {
-                                piece.x -= 1;
-                            }
-                        }
-                        KeyCode::Right => {
-                            if !board.is_occ(piece.x+1, piece.y) {
-                                piece.x += 1;
-                            }
-                        }
-                        KeyCode::Down => {
-                            if !board.is_occ(piece.x, piece.y+1) {
-                                piece.y += 1;
-                            }
-                        }
-                        KeyCode::Esc => break,
+                if key_event.kind != KeyEventKind::Repeat && key_event.kind != KeyEventKind::Release {
+                    match key_event.code {
+                        KeyCode::Left => ml = true,
+                        KeyCode::Right => mr = true,
+                        KeyCode::Down => md = true,
+                        KeyCode::Esc => exit = true,
                         _ => {}
                     }
                 }
             }
         }
+        
+        if exit {
+            break;
+        }
+        if ml && !board.is_occ(piece.x - 1, piece.y) {
+            piece.x -= 1;
+        }
+        
+        if mr && !board.is_occ(piece.x + 1, piece.y) {
+            piece.x += 1;
+        }
+        
+        if md && !board.is_occ(piece.x, piece.y + 1) {
+            piece.y += 1;
+        }
+        
+        ml = false;
+        mr = false;
+        md = false;
         thread::sleep(std::time::Duration::from_millis(200));
         if board.is_occ(piece.x, piece.y+1) {
             board.set_cell(piece.x as usize, piece.y as usize, 1);

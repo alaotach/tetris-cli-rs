@@ -1,11 +1,8 @@
-use std::{thread, io::{stdout, Write}};
+use std::{thread, io};
 use std::time::{Instant, Duration};
 use crossterm::{ 
-    event::{self, Event, KeyCode, KeyEventKind}, 
-    terminal::{enable_raw_mode, disable_raw_mode, Clear, ClearType}, 
-    cursor::MoveTo,
-    ExecutableCommand,
-};
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen}, execute };
+use ratatui::{ backend::CrosstermBackend, Terminal, layout::{Layout, Constraint, Direction}, widgets::{Block, Borders, Paragraph}, text::Line };
 use rand::RngExt;
 const W: usize = 10;
 const H: usize = 15;
@@ -32,40 +29,64 @@ impl Board {
         }
     }
 
-    fn render(&self, piece: &Piece, ghost: &Piece, score: u32, show_ghost: bool) {
-        println!("Score: {}", score);
-        for y in 0..H {
-            for x in 0..W {
-                let mut is_piece = false;
-                let mut is_ghost = false;
-                for (dx, dy) in piece.blocks {
-                    if piece.x + dx == x as i32 && piece.y + dy == y as i32 {
-                        is_piece = true;
-                    }
-                }
-                if show_ghost {
-                    for (dx, dy) in ghost.blocks {
-                        if ghost.x + dx == x as i32 &&
-                        ghost.y + dy == y as i32 {
-                            is_ghost = true;
+    fn render(&self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, piece: &Piece, ghost: &Piece, score: u32, show_ghost: bool) {
+        terminal.draw(|f| {
+            let size = f.area();
+            let chunks = Layout::default().direction(Direction::Horizontal).constraints([
+                    Constraint::Length((W * 2 + 2) as u16),
+                    Constraint::Min(10),
+                ]).split(size);
+            let mut lines = Vec::new();
+
+            for y in 0..H {
+                let mut row = String::new();
+                for x in 0..W {
+                    let mut is_piece = false;
+                    let mut is_ghost = false;
+                    
+                    for (dx, dy) in piece.blocks {
+                        if piece.x + dx == x as i32 && piece.y + dy == y as i32 {
+                            is_piece = true;
                         }
                     }
+                    
+
+                    if show_ghost {
+                        for (dx, dy) in ghost.blocks {
+                            if ghost.x + dx == x as i32 && ghost.y + dy == y as i32 {
+                                is_ghost = true;
+                            }
+                        }
+                    }
+                    if is_piece {
+                        row.push_str("██");
+                    } else if is_ghost {
+                        row.push_str("░░");
+                    } else if self.cells[y][x] == 1 {
+                        row.push_str("██");
+                    } else {
+                        row.push_str("  ");
+                    }
                 }
-                if is_piece {
-                    print!("██");
-                }
-                else if is_ghost {
-                    print!("░░");
-                }
-                else if self.cells[y][x] == 1 {
-                    print!("██");
-                }
-                else {
-                    print!(". ");
-                }
+                lines.push(Line::from(row));
             }
-            println!();
-        }
+            
+            let board = Paragraph::new(lines)
+                .block(Block::default().borders(Borders::ALL).title("Tetris"));
+            f.render_widget(board, chunks[0]);
+            let info = Paragraph::new(vec![
+                Line::from(format!("Score: {}", score)),
+                Line::from(""),
+                Line::from("Controls:"),
+                Line::from("← →/A-D Move"),
+                Line::from("↓/S Soft Drop"),
+                Line::from("Space Hard Drop"),
+                Line::from("r Rotate"),
+                Line::from("g Ghost Toggle"),
+                Line::from("Esc Exit"),
+            ]).block(Block::default().borders(Borders::ALL).title("Info"));
+            f.render_widget(info, chunks[1]);
+        }).unwrap();
     }
 
     fn set_cell(&mut self, x: usize, y: usize, value: u8) {
@@ -182,16 +203,20 @@ fn main() {
     let delay = Duration::from_millis(300);
     let mut is_ghost = true;
     enable_raw_mode().unwrap();
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen).unwrap();
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.hide_cursor().unwrap();
     loop {
-        stdout().execute(Clear(ClearType::All)).unwrap();
-        stdout().execute(MoveTo(0, 0)).unwrap();
         //ghost piece logic
         let mut ghost = piece.clone();
         while !board.is_occ(&ghost, 0, 1) {
             ghost.y += 1;
         }
-        board.render(&piece, &ghost, score, is_ghost);
-        stdout().flush().unwrap();
+        
+        board.render(&mut terminal, &piece, &ghost, score, is_ghost);
+        
         while event::poll(Duration::from_millis(0)).unwrap() {
             if let Event::Key(key_event) = event::read().unwrap() {
                 if key_event.kind != KeyEventKind::Repeat && key_event.kind != KeyEventKind::Release {
@@ -231,6 +256,7 @@ fn main() {
                         KeyCode::Right | KeyCode::Char('d') | KeyCode::Char('D') => mr = true,
                         KeyCode::Down | KeyCode::Char('s') | KeyCode::Char('S') => md = true,
                         KeyCode::Char('g') | KeyCode::Char('G') => is_ghost = !is_ghost,
+                        KeyCode::Char('c') | KeyCode::Char('C') if key_event.modifiers.contains(KeyModifiers::CONTROL) => exit = true,
                         KeyCode::Esc => exit = true,
                         _ => {},
                     }
@@ -290,4 +316,6 @@ fn main() {
         }
     }
     disable_raw_mode().unwrap();
+    execute!(io::stdout(), LeaveAlternateScreen).unwrap();
+    terminal.show_cursor().unwrap();
 }

@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 crossterm = "0.29.0"
 rand = "0.10.0"
+ratatui = "0.30.0"
 
 [[bin]]
 name = "tetris-cli"

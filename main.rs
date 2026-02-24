@@ -33,18 +33,28 @@ impl Board {
         }
     }
 
-    fn render(&self, piece: &Piece, score: u32) {
+    fn render(&self, piece: &Piece, ghost: &Piece, score: u32) {
         println!("Score: {}", score);
         for y in 0..H {
             for x in 0..W {
                 let mut is_piece = false;
+                let mut is_ghost = false;
                 for (dx, dy) in piece.blocks {
                     if piece.x + dx == x as i32 && piece.y + dy == y as i32 {
                         is_piece = true;
                     }
                 }
+                for (dx, dy) in ghost.blocks {
+                    if ghost.x + dx == x as i32 &&
+                    ghost.y + dy == y as i32 {
+                        is_ghost = true;
+                    }
+                }
                 if is_piece {
                     print!("██");
+                }
+                else if is_ghost {
+                    print!("░░");
                 }
                 else if self.cells[y][x] == 1 {
                     print!("██");
@@ -171,9 +181,12 @@ fn main() {
     loop {
         stdout().execute(Clear(ClearType::All)).unwrap();
         stdout().execute(MoveTo(0, 0)).unwrap();
-        board.render(&piece, score);
+        let mut ghost = piece;
+        while !board.is_occ(&ghost, 0, 1) {
+            ghost.y += 1;
+        }
+        board.render(&piece, &ghost, score);
         stdout().flush().unwrap();
-        
         while event::poll(Duration::from_millis(0)).unwrap() {
             if let Event::Key(key_event) = event::read().unwrap() {
                 if key_event.kind != KeyEventKind::Repeat && key_event.kind != KeyEventKind::Release {

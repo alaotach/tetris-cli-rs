@@ -1,6 +1,5 @@
-use std::{thread, time::Duration};
-use std::io::stdout;
-use std::io::Write;
+use std::{thread, io::{stdout, Write}};
+use std::time::{Instant, Duration};
 use crossterm::{ 
     event::{self, Event, KeyCode, KeyEventKind}, 
     terminal::{enable_raw_mode, disable_raw_mode, Clear, ClearType}, 
@@ -177,6 +176,8 @@ fn main() {
     let mut md = false;
     let mut exit = false;
     let mut score: u32 = 0;
+    let mut lock: Option<Instant> = None;
+    let delay = Duration::from_millis(300);
     enable_raw_mode().unwrap();
     loop {
         stdout().execute(Clear(ClearType::All)).unwrap();
@@ -209,6 +210,7 @@ fn main() {
                                 _ => 0,
                             };
                             piece = Piece::random();
+                            lock = None;
                             if board.is_occ(&piece, 0, 0) {
                                 exit = true;
                             }
@@ -250,28 +252,35 @@ fn main() {
         md = false;
         thread::sleep(std::time::Duration::from_millis(200));
         if board.is_occ(&piece, 0, 1) {
-            for (dx, dy) in piece.blocks {
-                let px = piece.x + dx;
-                let py = piece.y + dy;
-                if px >= 0 && py >= 0 && px < W as i32 && py < H as i32 {
-                    board.set_cell(px as usize, py as usize, 1);
-                }
+            if lock.is_none() {
+                lock = Some(Instant::now());
             }
-            let cleared = board.clear_lines();
-            score += match cleared {
-                1 => 100,
-                2 => 300,
-                3 => 500,
-                4 => 800,
-                _ => 0,
-            };
-            piece = Piece::random();
-            if board.is_occ(&piece, 0, 0) {
-                break;
+            else if lock.unwrap().elapsed() >= delay {
+                for (dx, dy) in piece.blocks {
+                    let px = piece.x + dx;
+                    let py = piece.y + dy;
+                    if px >= 0 && py >= 0 && px < W as i32 && py < H as i32 {
+                        board.set_cell(px as usize, py as usize, 1);
+                    }
+                }
+                let cleared = board.clear_lines();
+                score += match cleared {
+                    1 => 100,
+                    2 => 300,
+                    3 => 500,
+                    4 => 800,
+                    _ => 0,
+                };
+                piece = Piece::random();
+                lock = None;
+                if board.is_occ(&piece, 0, 0) {
+                    break;
+                }
             }
         }
         else {
             piece.y += 1;
+            lock = None;
         }
     }
     disable_raw_mode().unwrap();

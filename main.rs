@@ -1,7 +1,12 @@
 use std::{thread, time::Duration};
 use std::io::stdout;
 use std::io::Write;
-use crossterm::{ event::{self, Event, KeyCode, KeyEventKind}, terminal::{enable_raw_mode, disable_raw_mode}, };
+use crossterm::{ 
+    event::{self, Event, KeyCode, KeyEventKind}, 
+    terminal::{enable_raw_mode, disable_raw_mode, Clear, ClearType}, 
+    cursor::MoveTo,
+    ExecutableCommand,
+};
 const W: usize = 10;
 const H: usize = 15;
 
@@ -22,7 +27,8 @@ impl Board {
         }
     }
 
-    fn render(&self, piece: &Piece) {
+    fn render(&self, piece: &Piece, score: u32) {
+        println!("Score: {}", score);
         for y in 0..H {
             for x in 0..W {
                 let mut is_piece = false;
@@ -83,16 +89,21 @@ impl Board {
         }
         true
     }
-    fn clear_lines(&mut self) {
+    fn clear_lines(&mut self) -> u32 {
         let mut ngrid = [[0u8; W]; H];
         let mut nr = H as i32 - 1;
+        let mut cleared = 0;
         for y in (0..H).rev() {
             if !self.line_full(y) {
                 ngrid[nr as usize] = self.cells[y];
                 nr -= 1;
             }
+            else {
+                cleared += 1;
+            }
         }
         self.cells = ngrid;
+        cleared
     }
  }
 
@@ -124,10 +135,12 @@ fn main() {
     let mut mr = false;
     let mut md = false;
     let mut exit = false;
+    let mut score: u32 = 0;
     enable_raw_mode().unwrap();
     loop {
-        print!("\x1B[2J\x1B[1;1H");
-        board.render(&piece);
+        stdout().execute(Clear(ClearType::All)).unwrap();
+        stdout().execute(MoveTo(0, 0)).unwrap();
+        board.render(&piece, score);
         stdout().flush().unwrap();
         
         while event::poll(Duration::from_millis(0)).unwrap() {
@@ -178,7 +191,14 @@ fn main() {
                     board.set_cell(px as usize, py as usize, 1);
                 }
             }
-            board.clear_lines();
+            let cleared = board.clear_lines();
+            score += match cleared {
+                1 => 100,
+                2 => 300,
+                3 => 500,
+                4 => 800,
+                _ => 0,
+            };
             piece = Piece::new_sq();
             if board.is_occ(&piece, 0, 0) {
                 break;

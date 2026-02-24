@@ -32,7 +32,7 @@ impl Board {
         }
     }
 
-    fn render(&self, piece: &Piece, ghost: &Piece, score: u32) {
+    fn render(&self, piece: &Piece, ghost: &Piece, score: u32, show_ghost: bool) {
         println!("Score: {}", score);
         for y in 0..H {
             for x in 0..W {
@@ -43,10 +43,12 @@ impl Board {
                         is_piece = true;
                     }
                 }
-                for (dx, dy) in ghost.blocks {
-                    if ghost.x + dx == x as i32 &&
-                    ghost.y + dy == y as i32 {
-                        is_ghost = true;
+                if show_ghost {
+                    for (dx, dy) in ghost.blocks {
+                        if ghost.x + dx == x as i32 &&
+                        ghost.y + dy == y as i32 {
+                            is_ghost = true;
+                        }
                     }
                 }
                 if is_piece {
@@ -178,20 +180,23 @@ fn main() {
     let mut score: u32 = 0;
     let mut lock: Option<Instant> = None;
     let delay = Duration::from_millis(300);
+    let mut is_ghost = true;
     enable_raw_mode().unwrap();
     loop {
         stdout().execute(Clear(ClearType::All)).unwrap();
         stdout().execute(MoveTo(0, 0)).unwrap();
-        let mut ghost = piece;
+        //ghost piece logic
+        let mut ghost = piece.clone();
         while !board.is_occ(&ghost, 0, 1) {
             ghost.y += 1;
         }
-        board.render(&piece, &ghost, score);
+        board.render(&piece, &ghost, score, is_ghost);
         stdout().flush().unwrap();
         while event::poll(Duration::from_millis(0)).unwrap() {
             if let Event::Key(key_event) = event::read().unwrap() {
                 if key_event.kind != KeyEventKind::Repeat && key_event.kind != KeyEventKind::Release {
                     match key_event.code {
+                        // hard drop logic
                         KeyCode::Char(' ') => {
                             while !board.is_occ(&piece, 0, 1) {
                                 piece.y += 1;
@@ -215,16 +220,17 @@ fn main() {
                                 exit = true;
                             }
                         }
-                        KeyCode::Char('r') => {
+                        KeyCode::Char('r') | KeyCode::Char('R') | KeyCode::Char('w') | KeyCode::Char('W') => {
                             let mut rpiece = piece.clone();
                             rpiece.rotate();
                             if board.can_rot(&rpiece) {
                                 piece = rpiece;
                             }
                         }
-                        KeyCode::Left => ml = true,
-                        KeyCode::Right => mr = true,
-                        KeyCode::Down => md = true,
+                        KeyCode::Left | KeyCode::Char('a') | KeyCode::Char('A') => ml = true,
+                        KeyCode::Right | KeyCode::Char('d') | KeyCode::Char('D') => mr = true,
+                        KeyCode::Down | KeyCode::Char('s') | KeyCode::Char('S') => md = true,
+                        KeyCode::Char('g') | KeyCode::Char('G') => is_ghost = !is_ghost,
                         KeyCode::Esc => exit = true,
                         _ => {},
                     }

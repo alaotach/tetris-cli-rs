@@ -75,6 +75,25 @@ impl Board {
         }
         true
     }
+    fn line_full(&self, y: usize) -> bool {
+        for x in 0..W {
+            if self.cells[y][x] == 0 {
+                return false;
+            }
+        }
+        true
+    }
+    fn clear_lines(&mut self) {
+        let mut ngrid = [[0u8; W]; H];
+        let mut nr = H as i32 - 1;
+        for y in (0..H).rev() {
+            if !self.line_full(y) {
+                ngrid[nr as usize] = self.cells[y];
+                nr -= 1;
+            }
+        }
+        self.cells = ngrid;
+    }
  }
 
 impl Piece {
@@ -159,6 +178,7 @@ fn main() {
                     board.set_cell(px as usize, py as usize, 1);
                 }
             }
+            board.clear_lines();
             piece = Piece::new_sq();
             if board.is_occ(&piece, 0, 0) {
                 break;

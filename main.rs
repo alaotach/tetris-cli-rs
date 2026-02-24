@@ -7,10 +7,16 @@ use crossterm::{
     cursor::MoveTo,
     ExecutableCommand,
 };
+use rand::RngExt;
 const W: usize = 10;
 const H: usize = 15;
 
+#[derive(Clone, Copy)]
+enum Tetromino {I,O,T,L,J,S,Z,}
+
+#[derive(Clone, Copy)]
 struct Piece {
+    kind: Tetromino,
     x: i32,
     y: i32,
     blocks: [(i32, i32); 4],
@@ -108,9 +114,10 @@ impl Board {
  }
 
 impl Piece {
-    fn new_sq() -> Self {
+    fn new(kind: Tetromino) -> Self {
         Self {
-            x: 4, y: 0, blocks: [(0, 0), (1, 0), (0, 1), (1, 1)],
+            kind,
+            x: 4, y: 0, blocks: Piece::shape(kind),
         }
     }
     fn rotate(&mut self) {
@@ -121,16 +128,40 @@ impl Piece {
     }
     fn clone(&self) -> Self {
         Self {
+            kind: self.kind,
             x: self.x,
             y: self.y,
             blocks: self.blocks,
         }
     }
+    fn shape(kind: Tetromino) -> [(i32, i32); 4] {
+        match kind {
+            Tetromino::I => [(0, 0), (1, 0), (2, 0), (3, 0)],
+            Tetromino::O => [(0, 0), (1, 0), (0, 1), (1, 1)],
+            Tetromino::T => [(0, 0), (-1, 1), (0, 1), (1, 1)],
+            Tetromino::L => [(0, 0), (0, 1), (0, 2), (1, 2)],
+            Tetromino::J => [(0, 0), (0, 1), (0, 2), (-1, 2)],
+            Tetromino::S => [(0, 0), (1, 0), (-1, 1), (0, 1)],
+            Tetromino::Z => [(0, 0), (-1, 0), (0, 1), (1, 1)],
+        }
+    }
+    fn random() -> Self {
+        let kind = match rand::rng().random_range(0..7) {
+            0 => Tetromino::I,
+            1 => Tetromino::O,
+            2 => Tetromino::T,
+            3 => Tetromino::L,
+            4 => Tetromino::J,
+            5 => Tetromino::S,
+            _ => Tetromino::Z,
+        };
+        Piece::new(kind)
+    }
 }
 
 fn main() {
     let mut board = Board::new();
-    let mut piece = Piece::new_sq();
+    let mut piece = Piece::random();
     let mut ml = false;
     let mut mr = false;
     let mut md = false;
@@ -147,6 +178,28 @@ fn main() {
             if let Event::Key(key_event) = event::read().unwrap() {
                 if key_event.kind != KeyEventKind::Repeat && key_event.kind != KeyEventKind::Release {
                     match key_event.code {
+                        KeyCode::Char(' ') => {
+                            while !board.is_occ(&piece, 0, 1) {
+                                piece.y += 1;
+                            }
+                            for (dx, dy) in piece.blocks {
+                                let px = piece.x + dx;
+                                let py = piece.y + dy;
+                                board.cells[py as usize][px as usize] = 1;
+                            }
+                            let cleared = board.clear_lines();
+                            score += match cleared {
+                                1 => 100,
+                                2 => 300,
+                                3 => 500,
+                                4 => 800,
+                                _ => 0,
+                            };
+                            piece = Piece::random();
+                            if board.is_occ(&piece, 0, 0) {
+                                exit = true;
+                            }
+                        }
                         KeyCode::Char('r') => {
                             let mut rpiece = piece.clone();
                             rpiece.rotate();
@@ -199,7 +252,7 @@ fn main() {
                 4 => 800,
                 _ => 0,
             };
-            piece = Piece::new_sq();
+            piece = Piece::random();
             if board.is_occ(&piece, 0, 0) {
                 break;
             }

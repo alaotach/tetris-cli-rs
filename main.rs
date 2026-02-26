@@ -2,7 +2,7 @@ use std::{thread, io};
 use std::time::{Instant, Duration};
 use crossterm::{ 
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen}, execute };
-use ratatui::{ backend::CrosstermBackend, Terminal, layout::{Layout, Constraint, Direction}, widgets::{Block, Borders, Paragraph}, text::Line };
+use ratatui::{ backend::CrosstermBackend, Terminal, layout::{Layout, Constraint, Direction}, widgets::{Block, Borders, Paragraph}, text::{Line, Span}, style::{Color, Style} };
 use rand::RngExt;
 const W: usize = 10;
 const H: usize = 15;
@@ -16,30 +16,47 @@ struct Piece {
     x: i32,
     y: i32,
     blocks: [(i32, i32); 4],
+    color: Color,
 }
 
 struct Board {
-    cells: [[u8; W]; H],
+    cells: [[Option<Color>; W]; H],
 }
 
 impl Board {
     fn new() -> Self {
         Board {
-            cells: [[0; W]; H],
+            cells: [[None; W]; H],
         }
     }
 
     fn render(&self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, piece: &Piece, ghost: &Piece, score: u32, show_ghost: bool) {
         terminal.draw(|f| {
             let size = f.area();
-            let chunks = Layout::default().direction(Direction::Horizontal).constraints([
-                    Constraint::Length((W * 2 + 2) as u16),
-                    Constraint::Min(10),
-                ]).split(size);
+            let wb = (W*2+2) as u16;
+            let hb = (H+2) as u16;
+            let sw = 28;
+            let vert = Layout::default().direction(Direction::Vertical).constraints([
+                Constraint::Min(0),
+                Constraint::Length(hb),
+                Constraint::Min(0),
+            ]).split(size);
+            let horiz = Layout::default().direction(Direction::Horizontal).constraints([
+                Constraint::Min(0),
+                Constraint::Length(wb),
+                Constraint::Length(sw),
+                Constraint::Min(0),
+            ]).split(vert[1]);
+            let ba = horiz[1]; //board area
+            let ia = horiz[2]; //info area
+            // let chunks = Layout::default().direction(Direction::Horizontal).constraints([
+            //         Constraint::Percentage(30),
+            //         Constraint::Percentage(70),
+            //     ]).split(size);
             let mut lines = Vec::new();
 
             for y in 0..H {
-                let mut row = String::new();
+                let mut spans = Vec::new();
                 for x in 0..W {
                     let mut is_piece = false;
                     let mut is_ghost = false;
@@ -49,7 +66,6 @@ impl Board {
                             is_piece = true;
                         }
                     }
-                    
 
                     if show_ghost {
                         for (dx, dy) in ghost.blocks {
@@ -59,21 +75,21 @@ impl Board {
                         }
                     }
                     if is_piece {
-                        row.push_str("██");
+                        spans.push(Span::styled("██", Style::default().fg(piece.color)));
                     } else if is_ghost {
-                        row.push_str("░░");
-                    } else if self.cells[y][x] == 1 {
-                        row.push_str("██");
+                        spans.push(Span::styled("░░", Style::default().fg(piece.color)));
+                    } else if let Some(color) = self.cells[y][x] {
+                        spans.push(Span::styled("██", Style::default().fg(color)));
                     } else {
-                        row.push_str("  ");
+                        spans.push(Span::raw("  "));
                     }
                 }
-                lines.push(Line::from(row));
+                lines.push(Line::from(spans));
             }
             
             let board = Paragraph::new(lines)
                 .block(Block::default().borders(Borders::ALL).title("Tetris"));
-            f.render_widget(board, chunks[0]);
+            f.render_widget(board, ba);
             let info = Paragraph::new(vec![
                 Line::from(format!("Score: {}", score)),
                 Line::from(""),
@@ -85,12 +101,12 @@ impl Board {
                 Line::from("g Ghost Toggle"),
                 Line::from("Esc Exit"),
             ]).block(Block::default().borders(Borders::ALL).title("Info"));
-            f.render_widget(info, chunks[1]);
+            f.render_widget(info, ia);
         }).unwrap();
     }
 
-    fn set_cell(&mut self, x: usize, y: usize, value: u8) {
-        self.cells[y][x] = value;
+    fn set_cell(&mut self, x: usize, y: usize, color: Color) {
+        self.cells[y][x] = Some(color);
     }
 
     fn is_occ(&self, piece: &Piece, dx: i32, dy: i32) -> bool {
@@ -100,7 +116,7 @@ impl Board {
             if x < 0 || x >= W as i32 || y < 0 || y >= H as i32 {
                 return true;
             }
-            if self.cells[y as usize][x as usize] == 1 {
+            if self.cells[y as usize][x as usize].is_some() {
                 return true;
             }
         }
@@ -113,7 +129,7 @@ impl Board {
             if x < 0 || x >= W as i32 || y < 0 || y >= H as i32 {
                 return false;
             }
-            if self.cells[y as usize][x as usize] == 1 {
+            if self.cells[y as usize][x as usize].is_some() {
                 return false;
             }
         }
@@ -121,14 +137,14 @@ impl Board {
     }
     fn line_full(&self, y: usize) -> bool {
         for x in 0..W {
-            if self.cells[y][x] == 0 {
+            if self.cells[y][x].is_none() {
                 return false;
             }
         }
         true
     }
     fn clear_lines(&mut self) -> u32 {
-        let mut ngrid = [[0u8; W]; H];
+        let mut ngrid = [[None; W]; H];
         let mut nr = H as i32 - 1;
         let mut cleared = 0;
         for y in (0..H).rev() {
@@ -149,7 +165,7 @@ impl Piece {
     fn new(kind: Tetromino) -> Self {
         Self {
             kind,
-            x: 4, y: 0, blocks: Piece::shape(kind),
+            x: 4, y: 0, blocks: Piece::shape(kind), color: Piece::color(),
         }
     }
     fn rotate(&mut self) {
@@ -164,6 +180,7 @@ impl Piece {
             x: self.x,
             y: self.y,
             blocks: self.blocks,
+            color: self.color,
         }
     }
     fn shape(kind: Tetromino) -> [(i32, i32); 4] {
@@ -175,6 +192,21 @@ impl Piece {
             Tetromino::J => [(0, 0), (0, 1), (0, 2), (-1, 2)],
             Tetromino::S => [(0, 0), (1, 0), (-1, 1), (0, 1)],
             Tetromino::Z => [(0, 0), (-1, 0), (0, 1), (1, 1)],
+        }
+    }
+    fn color() -> Color {
+        match rand::rng().random_range(0..9) {
+            0 => Color::Cyan,
+            1 => Color::Yellow,
+            2 => Color::Magenta,
+            3 => Color::LightYellow,
+            4 => Color::Blue,
+            5 => Color::Green,
+            6 => Color::LightRed,
+            7 => Color::LightGreen,
+            8 => Color::LightBlue,
+            _ => Color::Red,
+            
         }
     }
     fn random() -> Self {
@@ -229,7 +261,7 @@ fn main() {
                             for (dx, dy) in piece.blocks {
                                 let px = piece.x + dx;
                                 let py = piece.y + dy;
-                                board.cells[py as usize][px as usize] = 1;
+                                board.set_cell(px as usize, py as usize, piece.color);
                             }
                             let cleared = board.clear_lines();
                             score += match cleared {
@@ -292,7 +324,7 @@ fn main() {
                     let px = piece.x + dx;
                     let py = piece.y + dy;
                     if px >= 0 && py >= 0 && px < W as i32 && py < H as i32 {
-                        board.set_cell(px as usize, py as usize, 1);
+                        board.set_cell(px as usize, py as usize, piece.color);
                     }
                 }
                 let cleared = board.clear_lines();

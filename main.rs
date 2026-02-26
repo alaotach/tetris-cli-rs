@@ -223,6 +223,53 @@ impl Piece {
     }
 }
 
+fn render_GO(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, board: &Board, score: u32) -> io::Result<()> {
+    terminal.draw(|f| {
+        let size = f.area();
+        let wb = (W*2+2) as u16;
+        let hb = (H+2) as u16;
+        let sw = 28;
+        let vert = Layout::default().direction(Direction::Vertical).constraints([
+            Constraint::Min(0),
+            Constraint::Length(hb),
+            Constraint::Min(0),
+        ]).split(size);
+        let horiz = Layout::default().direction(Direction::Horizontal).constraints([
+            Constraint::Min(0),
+            Constraint::Length(wb),
+            Constraint::Length(sw),
+            Constraint::Min(0),
+        ]).split(vert[1]);
+        let ba = horiz[1];
+        let ia = horiz[2];
+        let mut lines = Vec::new();
+        for y in 0..H {
+            let mut spans = Vec::new();
+            for x in 0..W {
+                if let Some(color) = board.cells[y][x] {
+                    spans.push(Span::styled("██", Style::default().fg(color)));
+                } else {
+                    spans.push(Span::raw("  "));
+                }
+            }
+            lines.push(Line::from(spans));
+        }
+        let board_widget = Paragraph::new(lines)
+            .block(Block::default().borders(Borders::ALL).title("Tetris"));
+        f.render_widget(board_widget, ba);
+        let info = Paragraph::new(vec![
+            Line::from(Span::styled("YOU FRICKIN LOSER!!", Style::default().fg(Color::Red))),
+            Line::from(""),
+            Line::from(format!("Score: {}", score)),
+            Line::from(""),
+            Line::from("Press any key"),
+            Line::from("to exit..."),
+        ]).block(Block::default().borders(Borders::ALL).title("Info"));
+        f.render_widget(info, ia);
+    })?;
+    Ok(())
+}
+
 fn main() {
     let mut board = Board::new();
     let mut piece = Piece::random();
@@ -230,6 +277,7 @@ fn main() {
     let mut mr = false;
     let mut md = false;
     let mut exit = false;
+    let mut game_over = false;
     let mut score: u32 = 0;
     let mut lock: Option<Instant> = None;
     let delay = Duration::from_millis(300);
@@ -274,7 +322,14 @@ fn main() {
                             piece = Piece::random();
                             lock = None;
                             if board.is_occ(&piece, 0, 0) {
-                                exit = true;
+                                for (dx, dy) in piece.blocks {
+                                    let px = piece.x + dx;
+                                    let py = piece.y + dy;
+                                    if px >= 0 && py >= 0 && px < W as i32 && py < H as i32 {
+                                        board.set_cell(px as usize, py as usize, piece.color);
+                                    }
+                                }
+                                game_over = true;
                             }
                         }
                         KeyCode::Char('r') | KeyCode::Char('R') | KeyCode::Char('w') | KeyCode::Char('W') => {
@@ -297,6 +352,16 @@ fn main() {
         }
         
         if exit {
+            break;
+        }
+        
+        if game_over {
+            render_GO(&mut terminal, &board, score).unwrap();
+            loop {
+                if let Event::Key(_) = event::read().unwrap() {
+                    break;
+                }
+            }
             break;
         }
         if ml && !board.is_occ(&piece, -1, 0) {
@@ -338,7 +403,14 @@ fn main() {
                 piece = Piece::random();
                 lock = None;
                 if board.is_occ(&piece, 0, 0) {
-                    break;
+                    for (dx, dy) in piece.blocks {
+                        let px = piece.x + dx;
+                        let py = piece.y + dy;
+                        if px >= 0 && py >= 0 && px < W as i32 && py < H as i32 {
+                            board.set_cell(px as usize, py as usize, piece.color);
+                        }
+                    }
+                    game_over = true;
                 }
             }
         }

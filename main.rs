@@ -30,12 +30,12 @@ impl Board {
         }
     }
 
-    fn render(&self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, piece: &Piece, ghost: &Piece, score: u32, show_ghost: bool, next_piece: &Piece) {
+    fn render(&self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, piece: &Piece, ghost: &Piece, score: u32, show_ghost: bool, next_pieces: &[Piece], selected: Option<usize>) {
         terminal.draw(|f| {
             let size = f.area();
             let wb = (W*2+2) as u16;
             let hb = (H+2) as u16;
-            let sw = 28;
+            let sw = 40;
             let vert = Layout::default().direction(Direction::Vertical).constraints([
                 Constraint::Min(0),
                 Constraint::Length(hb),
@@ -93,47 +93,69 @@ impl Board {
             let mut info = vec![
                 Line::from(format!("Score: {}", score)),
                 Line::from(""),
-                Line::from("Next Piece:"),
-            ];            
+                Line::from("Next (1-3):"),
+            ];
+            let mut s = Vec::new();
+            for idx in 0..3 {
+                let iss = selected == Some(idx);
+                if iss {
+                    s.push(Span::styled(format!(" ►{} ", idx + 1), Style::default().fg(Color::Yellow)));
+                } 
+                else {
+                    s.push(Span::raw(format!("  {} ", idx + 1)));
+                }
+            }
+            info.push(Line::from(s));
             for py in 0..4 {
                 let mut spans = Vec::new();
-                for px in 0..4 {
-                    let mut is_block = false;
-                    for (dx, dy) in next_piece.blocks {
-                        if dx == px - 1 && dy == py {
-                            is_block = true;
-                            break;
-                        }
+                for (idx, next_piece) in next_pieces.iter().enumerate() {
+                    if idx > 0 {
+                        spans.push(Span::raw("   "));
                     }
-                    if is_block {
-                        spans.push(Span::styled("██", Style::default().fg(next_piece.color)));
-                    } else {
-                        spans.push(Span::raw("  "));
+                    for px in 0..4 {
+                        let mut is_block = false;
+                        for (dx, dy) in next_piece.blocks {
+                            if dx == px - 1 && dy == py - 1 {
+                                is_block = true;
+                                break;
+                            }
+                        }
+                        if is_block {
+                            spans.push(Span::styled("██", Style::default().fg(next_piece.color)));
+                        } else {
+                            spans.push(Span::raw("  "));
+                        }
                     }
                 }
                 info.push(Line::from(spans));
             }
             info.extend(vec![
-                Line::from(""),
+                Line::from("") ,
                 Line::from("Controls:"),
-                Line::from("← →/A-D Move"),
-                Line::from("↓/S Soft Drop"),
-                Line::from("Space Hard Drop"),
-                Line::from("r Rotate"),
-                Line::from("g Ghost Toggle"),
-                Line::from("Esc Exit"),
+                Line::from(vec![
+                    Span::raw("1-3 Select Next      "),
+                    Span::raw("r Rotate"),
+                ]),
+                Line::from(vec![
+                    Span::raw("← →/A-D Move        "),
+                    Span::raw("g Ghost Toggle"),
+                ]),
+                Line::from(vec![
+                    Span::raw("↓/S Soft Drop       "),
+                    Span::raw("Esc Exit"),
+                ]),
+                Line::from(vec![
+                    Span::raw("Space Hard Drop"),
+                ]),
             ]);
-            
             let infoo = Paragraph::new(info)
                 .block(Block::default().borders(Borders::ALL).title("Info"));
             f.render_widget(infoo, ia);
         }).unwrap();
     }
-
     fn set_cell(&mut self, x: usize, y: usize, color: Color) {
         self.cells[y][x] = Some(color);
     }
-
     fn is_occ(&self, piece: &Piece, dx: i32, dy: i32) -> bool {
         for (px, py) in piece.blocks {
             let x = piece.x + px + dx;
@@ -298,7 +320,11 @@ fn render_go(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, board: &Boar
 fn main() {
     let mut board = Board::new();
     let mut piece = Piece::random();
-    let mut next_piece = Piece::random();
+    let mut next_piece: Vec<Piece> = vec![
+        Piece::random(),
+        Piece::random(),
+        Piece::random(),
+    ];
     let mut ml = false;
     let mut mr = false;
     let mut md = false;
@@ -308,6 +334,7 @@ fn main() {
     let mut lock: Option<Instant> = None;
     let delay = Duration::from_millis(300);
     let mut is_ghost = true;
+    let mut select: Option<usize> = None;
     enable_raw_mode().unwrap();
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen).unwrap();
@@ -321,7 +348,7 @@ fn main() {
             ghost.y += 1;
         }
         
-        board.render(&mut terminal, &piece, &ghost, score, is_ghost, &next_piece);
+        board.render(&mut terminal, &piece, &ghost, score, is_ghost, &next_piece, select);
         
         while event::poll(Duration::from_millis(0)).unwrap() {
             if let Event::Key(key_event) = event::read().unwrap() {
@@ -345,8 +372,15 @@ fn main() {
                                 4 => 800,
                                 _ => 0,
                             };
-                            piece = next_piece;
-                            next_piece = Piece::random();
+                            let i = select.unwrap_or(0);
+                            if i < next_piece.len() {
+                                piece = next_piece.remove(i);
+                            }
+                            else {
+                                piece = next_piece.remove(0);
+                            }
+                            next_piece.push(Piece::random());
+                            select = None;
                             lock = None;
                             if board.is_occ(&piece, 0, 0) {
                                 for (dx, dy) in piece.blocks {
@@ -366,6 +400,9 @@ fn main() {
                                 piece = rpiece;
                             }
                         }
+                        KeyCode::Char('1') => select = Some(0),
+                        KeyCode::Char('2') => select = Some(1),
+                        KeyCode::Char('3') => select = Some(2),
                         KeyCode::Left | KeyCode::Char('a') | KeyCode::Char('A') => ml = true,
                         KeyCode::Right | KeyCode::Char('d') | KeyCode::Char('D') => mr = true,
                         KeyCode::Down | KeyCode::Char('s') | KeyCode::Char('S') => md = true,
@@ -427,8 +464,8 @@ fn main() {
                     4 => 800,
                     _ => 0,
                 };
-                piece = next_piece;
-                next_piece = Piece::random();
+                piece = next_piece.remove(0);
+                next_piece.push(Piece::random());
                 lock = None;
                 if board.is_occ(&piece, 0, 0) {
                     for (dx, dy) in piece.blocks {

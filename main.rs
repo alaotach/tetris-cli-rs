@@ -30,7 +30,7 @@ impl Board {
         }
     }
 
-    fn render(&self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, piece: &Piece, ghost: &Piece, score: u32, show_ghost: bool) {
+    fn render(&self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, piece: &Piece, ghost: &Piece, score: u32, show_ghost: bool, next_piece: &Piece) {
         terminal.draw(|f| {
             let size = f.area();
             let wb = (W*2+2) as u16;
@@ -90,8 +90,30 @@ impl Board {
             let board = Paragraph::new(lines)
                 .block(Block::default().borders(Borders::ALL).title("Tetris"));
             f.render_widget(board, ba);
-            let info = Paragraph::new(vec![
+            let mut info = vec![
                 Line::from(format!("Score: {}", score)),
+                Line::from(""),
+                Line::from("Next Piece:"),
+            ];            
+            for py in 0..4 {
+                let mut spans = Vec::new();
+                for px in 0..4 {
+                    let mut is_block = false;
+                    for (dx, dy) in next_piece.blocks {
+                        if dx == px - 1 && dy == py {
+                            is_block = true;
+                            break;
+                        }
+                    }
+                    if is_block {
+                        spans.push(Span::styled("██", Style::default().fg(next_piece.color)));
+                    } else {
+                        spans.push(Span::raw("  "));
+                    }
+                }
+                info.push(Line::from(spans));
+            }
+            info.extend(vec![
                 Line::from(""),
                 Line::from("Controls:"),
                 Line::from("← →/A-D Move"),
@@ -100,8 +122,11 @@ impl Board {
                 Line::from("r Rotate"),
                 Line::from("g Ghost Toggle"),
                 Line::from("Esc Exit"),
-            ]).block(Block::default().borders(Borders::ALL).title("Info"));
-            f.render_widget(info, ia);
+            ]);
+            
+            let infoo = Paragraph::new(info)
+                .block(Block::default().borders(Borders::ALL).title("Info"));
+            f.render_widget(infoo, ia);
         }).unwrap();
     }
 
@@ -223,7 +248,7 @@ impl Piece {
     }
 }
 
-fn render_GO(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, board: &Board, score: u32) -> io::Result<()> {
+fn render_go(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, board: &Board, score: u32) -> io::Result<()> {
     terminal.draw(|f| {
         let size = f.area();
         let wb = (W*2+2) as u16;
@@ -273,6 +298,7 @@ fn render_GO(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, board: &Boar
 fn main() {
     let mut board = Board::new();
     let mut piece = Piece::random();
+    let mut next_piece = Piece::random();
     let mut ml = false;
     let mut mr = false;
     let mut md = false;
@@ -295,7 +321,7 @@ fn main() {
             ghost.y += 1;
         }
         
-        board.render(&mut terminal, &piece, &ghost, score, is_ghost);
+        board.render(&mut terminal, &piece, &ghost, score, is_ghost, &next_piece);
         
         while event::poll(Duration::from_millis(0)).unwrap() {
             if let Event::Key(key_event) = event::read().unwrap() {
@@ -319,7 +345,8 @@ fn main() {
                                 4 => 800,
                                 _ => 0,
                             };
-                            piece = Piece::random();
+                            piece = next_piece;
+                            next_piece = Piece::random();
                             lock = None;
                             if board.is_occ(&piece, 0, 0) {
                                 for (dx, dy) in piece.blocks {
@@ -356,7 +383,7 @@ fn main() {
         }
         
         if game_over {
-            render_GO(&mut terminal, &board, score).unwrap();
+            render_go(&mut terminal, &board, score).unwrap();
             loop {
                 if let Event::Key(_) = event::read().unwrap() {
                     break;
@@ -400,7 +427,8 @@ fn main() {
                     4 => 800,
                     _ => 0,
                 };
-                piece = Piece::random();
+                piece = next_piece;
+                next_piece = Piece::random();
                 lock = None;
                 if board.is_occ(&piece, 0, 0) {
                     for (dx, dy) in piece.blocks {

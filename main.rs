@@ -4,6 +4,7 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen}, execute };
 use ratatui::{ backend::CrosstermBackend, Terminal, layout::{Layout, Constraint, Direction}, widgets::{Block, Borders, Paragraph}, text::{Line, Span}, style::{Color, Style} };
 use rand::RngExt;
+use std::fs;
 const W: usize = 10;
 const H: usize = 15;
 
@@ -270,7 +271,7 @@ impl Piece {
     }
 }
 
-fn render_go(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, board: &Board, score: u32) -> io::Result<()> {
+fn render_go(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, board: &Board, score: u32, high_score: u32,) -> io::Result<()> {
     terminal.draw(|f| {
         let size = f.area();
         let wb = (W*2+2) as u16;
@@ -308,9 +309,10 @@ fn render_go(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, board: &Boar
             Line::from(Span::styled("YOU FRICKIN LOSER!!", Style::default().fg(Color::Red))),
             Line::from(""),
             Line::from(format!("Score: {}", score)),
+            Line::from(format!("High Score: {}", high_score)),
             Line::from(""),
-            Line::from("Press any key"),
-            Line::from("to exit..."),
+            Line::from("Press R to Restart..."),
+            Line::from("Esc to Exit"),
         ]).block(Block::default().borders(Borders::ALL).title("Info"));
         f.render_widget(info, ia);
     })?;
@@ -335,6 +337,10 @@ fn main() {
     let delay = Duration::from_millis(300);
     let mut is_ghost = true;
     let mut select: Option<usize> = None;
+    let mut high_score = fs::read_to_string("highscore.txt")
+    .ok()
+    .and_then(|s| s.trim().parse().ok())
+    .unwrap_or(0);
     enable_raw_mode().unwrap();
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen).unwrap();
@@ -390,6 +396,10 @@ fn main() {
                                         board.set_cell(px as usize, py as usize, piece.color);
                                     }
                                 }
+                                if score > high_score {
+                                    high_score = score;
+                                    fs::write("highscore.txt", high_score.to_string()).unwrap();
+                                }
                                 game_over = true;
                             }
                         }
@@ -420,13 +430,32 @@ fn main() {
         }
         
         if game_over {
-            render_go(&mut terminal, &board, score).unwrap();
+            render_go(&mut terminal, &board, score, high_score).unwrap();
             loop {
-                if let Event::Key(_) = event::read().unwrap() {
-                    break;
+                if let Event::Key(key) = event::read().unwrap() {
+                    match key.code {
+                        KeyCode::Char('r') | KeyCode::Char('R') => {
+                            board = Board::new();
+                            piece = Piece::random();
+                            next_piece = vec![
+                                Piece::random(),
+                                Piece::random(),
+                                Piece::random(),
+                            ];
+                            score = 0;
+                            lock = None;
+                            select = None;
+                            game_over = false;
+                            break;
+                        }
+                        KeyCode::Esc => {
+                            exit = true;
+                            break;
+                        }
+                        _ => {}
+                    }
                 }
             }
-            break;
         }
         if ml && !board.is_occ(&piece, -1, 0) {
             piece.x -= 1;
@@ -474,6 +503,10 @@ fn main() {
                         if px >= 0 && py >= 0 && px < W as i32 && py < H as i32 {
                             board.set_cell(px as usize, py as usize, piece.color);
                         }
+                    }
+                    if score > high_score {
+                        high_score = score;
+                        fs::write("highscore.txt", high_score.to_string()).unwrap();
                     }
                     game_over = true;
                 }
